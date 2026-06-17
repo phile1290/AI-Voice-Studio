@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Play, Square, Loader2, Sparkles, FileText, Info, CheckCircle2, Download, RotateCcw, Music, AlertCircle, MapPin, User, Baby, Armchair } from 'lucide-react';
+import { Bot, Play, Square, Loader2, Sparkles, FileText, Info, CheckCircle2, Download, RotateCcw, Music, AlertCircle, MapPin, User, Baby, Armchair, LogOut } from 'lucide-react';
 import { VoiceProfile, AudioChunk, ProcessingState, RegionalAccent, AgeGroup, Language } from './types';
 import { VOICE_PROFILES, MAX_CHUNK_LENGTH, ACCENT_PROMPTS } from './constants';
 import { splitTextIntoChunks, decodeAudioData, audioBuffersToWav, downloadBlob } from './utils/audioUtils';
@@ -10,7 +10,12 @@ import AudioVisualizer from './components/AudioVisualizer';
 
 const App: React.FC = () => {
   // --- State ---
-  const [isAuthorized, setIsAuthorized] = useState<boolean>(true); // skip API connect by default
+  const [isAuthorized, setIsAuthorized] = useState<boolean>(false);
+  const [showActivation, setShowActivation] = useState<boolean>(true);
+  const [activationCode, setActivationCode] = useState<string>('');
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const [activationLoading, setActivationLoading] = useState<boolean>(false);
+  
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [inputText, setInputText] = useState<string>('Xin chào! Đây là kiến trúc Generative AI chuyển đổi văn bản thành giọng nói. Tôi có thể đọc các đoạn văn dài một cách trôi chảy.');
   
@@ -82,6 +87,13 @@ const App: React.FC = () => {
 
   // --- Initialization ---
   useEffect(() => {
+    // Check for existing token
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      setIsAuthorized(true);
+      setShowActivation(false);
+    }
+
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     audioContextRef.current = new AudioContextClass();
     return () => {
@@ -292,7 +304,13 @@ const App: React.FC = () => {
 
     } catch (error: any) {
         let msg = error.message || "Đã có lỗi xảy ra. Hãy thử lại.";
-        if (msg.includes("Lỗi hệ thống:")) {
+        
+        if (msg.includes("Mã") || msg.toLowerCase().includes("token") || msg.includes("kích hoạt")) {
+             localStorage.removeItem("access_token");
+             setIsAuthorized(false);
+             setShowActivation(true);
+             msg = "Mã kích hoạt bị lỗi hoặc đã hết hạn. Vui lòng thử lại.";
+        } else if (msg.includes("Lỗi hệ thống:")) {
              // already have prefix
         } else if (!msg.includes("Vui lòng") && !msg.includes("giới hạn")) {
              msg = "Lỗi hệ thống: " + msg;
@@ -304,10 +322,80 @@ const App: React.FC = () => {
   };
 
   
+  const handleActivate = async () => {
+    setActivationError(null);
+    setActivationLoading(true);
+    try {
+      const res = await fetch('/api/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: activationCode })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Lỗi kết nối.');
+      }
+      localStorage.setItem('access_token', data.token);
+      setIsAuthorized(true);
+      setShowActivation(false);
+      setShowOnboarding(true);
+    } catch (e: any) {
+      setActivationError(e.message);
+    } finally {
+      setActivationLoading(false);
+    }
+  };
+
   // --- RENDER: Main App ---
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 pb-40 relative font-sans">
       
+      {/* Activation Screen */}
+      {showActivation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden p-8">
+            <div className="flex flex-col items-center mb-6">
+               <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/30">
+                  <Bot className="w-8 h-8 text-white" />
+               </div>
+               <h2 className="text-2xl font-bold text-white text-center">GenAI Voice Pro</h2>
+               <p className="text-slate-400 text-sm mt-2 text-center">Phiên bản giới hạn cấp quyền thủ công.</p>
+            </div>
+            
+            <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 space-y-2 text-sm text-slate-300">
+               <p className="text-xs leading-relaxed">Để sử dụng ứng dụng trong <strong className="text-white">1 năm</strong> với phí dịch vụ chỉ <strong className="text-emerald-400">29.000đ</strong>, vui lòng chuyển khoản để nhận Mã Kích Hoạt.</p>
+               <ul className="list-disc pl-5 mt-2 space-y-1 text-slate-400">
+                 <li>Ngân hàng: <strong>Agribank</strong></li>
+                 <li>STK: <strong>4306205010382</strong></li>
+                 <li>Chủ TK: <strong>LE VAN PHI</strong></li>
+               </ul>
+               <p className="mt-2 text-xs text-indigo-400">Sau khi chuyển khoản, hãy liên hệ Zalo: 0352458176 để nhận mã.</p>
+            </div>
+
+            <div className="space-y-4">
+               <div>
+                  <input 
+                    type="text" 
+                    value={activationCode}
+                    onChange={(e) => setActivationCode(e.target.value)}
+                    placeholder="Nhập mã kích hoạt của bạn..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500 outline-none uppercase font-mono tracking-widest text-center"
+                  />
+               </div>
+               {activationError && <p className="text-red-400 text-sm text-center font-medium">{activationError}</p>}
+               <button 
+                  onClick={handleActivate}
+                  disabled={!activationCode || activationLoading}
+                  className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
+                >
+                  {activationLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                  {activationLoading ? "Đang kiểm tra..." : "Kích Hoạt Ngay"}
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Onboarding */}
       {showOnboarding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/90 backdrop-blur-sm">
@@ -354,6 +442,17 @@ const App: React.FC = () => {
                   className={`px-3 py-1 text-xs font-bold rounded ${activeLanguage === Language.EN ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >EN</button>
              </div>
+             <button
+               onClick={() => {
+                 localStorage.removeItem('access_token');
+                 setIsAuthorized(false);
+                 setShowActivation(true);
+               }}
+               title="Đăng xuất / Tùy chỉnh mã"
+               className="p-1.5 sm:p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors border border-transparent hover:border-slate-700"
+             >
+               <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+             </button>
           </div>
         </div>
       </header>

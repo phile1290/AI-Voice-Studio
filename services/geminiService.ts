@@ -16,6 +16,10 @@ export const generateSpeechFromText = async (
   for (let attempt = 1; attempt <= currentRetries; attempt++) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
       const response = await fetch('/api/gemini/tts', {
         method: 'POST',

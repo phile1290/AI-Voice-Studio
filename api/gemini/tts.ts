@@ -1,10 +1,30 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
+import jwt from 'jsonwebtoken';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  // --- Auth Verification ---
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Bạn cần nhập mã kích hoạt để sử dụng chức năng này.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const jwtSecret = process.env.JWT_SECRET || 'fallback_secret_key_for_dev_only';
+
+  try {
+    jwt.verify(token, jwtSecret);
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Mã của bạn đã hết hạn (1 năm). Vui lòng mua mã mới.' });
+    }
+    return res.status(401).json({ error: 'Mã không hợp lệ hoặc đã bị thay đổi.' });
+  }
+  // -------------------------
 
   try {
     const { text, edgeVoice, edgePitch, edgeRate, speed } = req.body;

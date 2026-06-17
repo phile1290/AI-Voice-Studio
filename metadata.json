@@ -1,0 +1,10 @@
+{
+  "name": "TẠO GiỌNG ĐỌC",
+  "description": "A professional Text-to-Speech application utilizing Gemini 2.5 Flash TTS capabilities. Features advanced voice mapping, text chunking for long-form content, and real-time audio synthesis.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

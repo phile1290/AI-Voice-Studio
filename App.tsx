@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Play, Square, Loader2, Sparkles, FileText, Info, CheckCircle2, Download, RotateCcw, Music, AlertCircle, MapPin, User, Baby, Armchair } from 'lucide-react';
 import { VoiceProfile, AudioChunk, ProcessingState, RegionalAccent, AgeGroup, Language } from './types';
 import { VOICE_PROFILES, MAX_CHUNK_LENGTH, ACCENT_PROMPTS } from './constants';
-import { splitTextIntoChunks, decodeAudioData, audioBuffersToWav, downloadBlob } from './utils/audioUtils';
+import { splitTextIntoChunks, decodeAudioData, downloadBlob } from './utils/audioUtils';
 import { generateSpeechFromText } from './services/geminiService';
 import VoiceCard from './components/VoiceCard';
 import AudioVisualizer from './components/AudioVisualizer';
@@ -176,17 +176,40 @@ const App: React.FC = () => {
   };
 
   const handleDownload = () => {
-    const validBuffers = audioQueue
-      .filter(c => c.buffer !== null)
-      .map(c => c.buffer!);
+    const validChunks = audioQueue.filter(c => c.rawBase64 !== null);
 
-    if (validBuffers.length === 0) {
+    if (validChunks.length === 0) {
         setErrorMessage("Không có dữ liệu âm thanh để tải xuống.");
         return;
     }
     
     try {
-      const blob = audioBuffersToWav(validBuffers);
+      // Decode Base64 back to Uint8Arrays
+      const byteArrays = validChunks.map(c => {
+        const binaryString = atob(c.rawBase64!);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+      });
+
+      // Calculate total length
+      let totalLength = 0;
+      for (const arr of byteArrays) {
+        totalLength += arr.length;
+      }
+
+      // Concatenate all Uint8Arrays
+      const concatenatedArray = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const arr of byteArrays) {
+        concatenatedArray.set(arr, offset);
+        offset += arr.length;
+      }
+
+      const blob = new Blob([concatenatedArray], { type: 'audio/mp3' });
       
       // Logic tạo tên file: 2 từ đầu văn bản + Tên nhân vật
       const words = inputText.trim().split(/\s+/);
@@ -194,11 +217,11 @@ const App: React.FC = () => {
       // Xử lý tên nhân vật (thay khoảng trắng bằng gạch dưới cho an toàn)
       const charName = selectedProfile.displayName.replace(/\s+/g, '_');
       
-      const fileName = `${shortText}_${charName}.wav`;
+      const fileName = `${shortText}_${charName}.mp3`;
 
       downloadBlob(blob, fileName);
     } catch (error) {
-      console.error("WAV Encoding failed", error);
+      console.error("MP3 Encoding failed", error);
       setErrorMessage("Lỗi khi tạo file tải xuống.");
     }
   };

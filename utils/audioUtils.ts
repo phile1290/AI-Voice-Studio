@@ -66,45 +66,62 @@ function writeString(view: DataView, offset: number, string: string) {
  * Encodes AudioBuffers into a WAV Blob.
  */
 export function audioBuffersToWav(buffers: AudioBuffer[]): Blob {
-  // 1. Calculate total length
+  if (buffers.length === 0) return new Blob([], { type: 'audio/wav' });
+
+  const sampleRate = buffers[0].sampleRate;
+  const numChannels = buffers[0].numberOfChannels;
+
+  // 1. Calculate total length per channel
   let totalLength = 0;
   for (const b of buffers) totalLength += b.length;
 
-  // 2. Create result buffer (24kHz, 1 channel, 16-bit)
+  // 2. Create result buffer
   // WAV Header is 44 bytes
-  const buffer = new ArrayBuffer(44 + totalLength * 2);
+  const bytesPerSample = 2; // 16-bit
+  const buffer = new ArrayBuffer(44 + totalLength * numChannels * bytesPerSample);
   const view = new DataView(buffer);
 
   // 3. Write WAV Header
   // RIFF chunk descriptor
   writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + totalLength * 2, true);
+  view.setUint32(4, 36 + totalLength * numChannels * bytesPerSample, true);
   writeString(view, 8, 'WAVE');
   
   // fmt sub-chunk
   writeString(view, 12, 'fmt ');
   view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
   view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
-  view.setUint16(22, 1, true); // NumChannels (Mono)
-  view.setUint32(24, 24000, true); // SampleRate
-  view.setUint32(28, 24000 * 2, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
-  view.setUint16(32, 2, true); // BlockAlign (NumChannels * BitsPerSample/8)
-  view.setUint16(34, 16, true); // BitsPerSample
+  view.setUint16(22, numChannels, true); // NumChannels
+  view.setUint32(24, sampleRate, true); // SampleRate
+  view.setUint32(28, sampleRate * numChannels * bytesPerSample, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+  view.setUint16(32, numChannels * bytesPerSample, true); // BlockAlign (NumChannels * BitsPerSample/8)
+  view.setUint16(34, bytesPerSample * 8, true); // BitsPerSample
 
   // data sub-chunk
   writeString(view, 36, 'data');
-  view.setUint32(40, totalLength * 2, true);
+  view.setUint32(40, totalLength * numChannels * bytesPerSample, true);
 
   // 4. Write PCM Data
   let offset = 44;
   for (const b of buffers) {
-    const data = b.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      // Float to Int16
-      let s = Math.max(-1, Math.min(1, data[i]));
-      s = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      view.setInt16(offset, s, true);
-      offset += 2;
+    if (numChannels === 1) {
+      const data = b.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        let s = Math.max(-1, Math.min(1, data[i]));
+        s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        view.setInt16(offset, s, true);
+        offset += bytesPerSample;
+      }
+    } else {
+      for (let i = 0; i < b.length; i++) {
+        for (let channel = 0; channel < numChannels; channel++) {
+          const data = b.getChannelData(channel);
+          let s = Math.max(-1, Math.min(1, data[i]));
+          s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          view.setInt16(offset, s, true);
+          offset += bytesPerSample;
+        }
+      }
     }
   }
 
